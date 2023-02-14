@@ -30,8 +30,9 @@ class GLU(torch.nn.Module):
     def forward(self, inputs):
         x, gate = inputs.chunk(2, dim=-1)
         return self.sub_activation(gate) * x
-
-# feedforward when GLU is used
+        #return new_gelu(gate) * x
+'''
+# feedforward when GLU is used, this class is not used in GPT-2
 class FFNComponent(torch.nn.Module):
     """Note: The FF layer is not auto-scaled when using a GLU type activation.
     Better do this manually and choose a sensible intermed_size that is nicely divisible.
@@ -50,7 +51,7 @@ class FFNComponent(torch.nn.Module):
 
     def forward(self, hidden_states):
         return self.dense_out(self.nonlin(self.dense_in(hidden_states)))
-
+'''
 
 # module partially stolen from pytorch examples:
 class SinusoidalPositional(torch.nn.Module):
@@ -179,7 +180,7 @@ class MLP(nn.Module):
         self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
         self.c_proj  = nn.Linear(2 * config.n_embd, config.n_embd, bias=config.bias)
         self.dropout = nn.Dropout(config.dropout)
-        self.GLU = GLU(new_gelu)
+        self.GLU = GLU(torch.nn.GELU)
 
     def forward(self, x):
         x = self.c_fc(x)
@@ -223,7 +224,6 @@ class GPT(nn.Module):
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
             #wpe = nn.Embedding(config.block_size, config.n_embd),
-            
             wpe = ScaledSinosoidal(config.n_embd, config.block_size),
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
