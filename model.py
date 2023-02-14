@@ -15,6 +15,95 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+
+# FeedForward
+# GLU to replace new_gelu
+class GLU(torch.nn.Module):
+    """*-GLU activation functions.
+    Implementation mostly following megatron
+    """
+
+    def __init__(self, sub_activation):
+        super().__init__()
+        self.sub_activation = sub_activation()
+
+    def forward(self, inputs):
+        x, gate = inputs.chunk(2, dim=-1)
+        return self.sub_activation(gate) * x
+
+# feedforward when GLU is used
+class FFNComponent(torch.nn.Module):
+    """Note: The FF layer is not auto-scaled when using a GLU type activation.
+    Better do this manually and choose a sensible intermed_size that is nicely divisible.
+    The neox suggestion for approx. equal parameter count is int(4 * 2 / 3 * hidden_size) * 2 [this is ~5.33]
+    """
+
+    def __init__(self, hidden_size, intermed_size, nonlin_fn=torch.nn.GELU, use_bias=True):
+        super().__init__()
+        self.dense_in = torch.nn.Linear(hidden_size, intermed_size, bias=use_bias)
+        self.nonlin = nonlin_fn()
+        if isinstance(self.nonlin, GLU) or getattr(self.nonlin, "original_name", "") == "GLU":
+            intermed_output_size = intermed_size // 2
+        else:
+            intermed_output_size = intermed_size
+        self.dense_out = torch.nn.Linear(intermed_output_size, hidden_size, bias=use_bias)
+
+    def forward(self, hidden_states):
+        return self.dense_out(self.nonlin(self.dense_in(hidden_states)))
+
+
+# module partially stolen from pytorch examples:
+class SinusoidalPositional(torch.nn.Module):
+    r"""Inject some information about the relative or absolute position of the tokens
+    in the sequence. The positional encodings have the same dimension as
+    the embeddings, so that the two can be summed. Here, we use sine and cosine
+    functions of different frequencies.
+    """
+
+    def __init__(self, embedding_dim, max_seq_length=5000):
+        super().__init__()
+
+        pe = torch.zeros(max_seq_length, embedding_dim)
+        position = torch.arange(0, max_seq_length, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, embedding_dim, 2).float() * (-math.log(10000.0) / embedding_dim))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        pe = pe.unsqueeze(0)
+        self.register_buffer("pe", pe, persistent=False)
+
+    def forward(self, input_ids):
+        r"""Inputs of forward function
+        Args:
+            x: the sequence fed to the positional encoder model (required).
+        Shape:
+            x: [batch size, sequence length, embed dim]
+            output: [batch size, sequence length, embed dim]
+        Examples:
+            >>> output = pos_encoder(x)
+        """
+        return self.pe[:, : input_ids.shape[1], :]
+
+# Embedding
+class ScaledSinosoidal(SinusoidalPositional):
+    """Sinusoidal with scaling (see FLASH paper)."""
+
+    def __init__(self, embedding_dim, max_seq_length):
+        super().__init__(embedding_dim, max_seq_length)
+        self.scale_factor = torch.nn.Parameter(torch.tensor([1.0 / embedding_dim**0.5]))
+
+    def forward(self, input_ids):
+        r"""Inputs of forward function
+        Args:
+            x: the sequence fed to the positional encoder model (required).
+        Shape:
+            x: [batch size, sequence length, embed dim]
+            output: [batch size, sequence length, embed dim]
+        Examples:
+            >>> output = pos_encoder(x)
+        """
+        return self.scale_factor * self.pe[:, : input_ids.shape[1], :]
+
 # @torch.jit.script # good to enable when not using torch.compile, disable when using (our default)
 def new_gelu(x):
     """
@@ -88,12 +177,13 @@ class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
-        self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
+        self.c_proj  = nn.Linear(2 * config.n_embd, config.n_embd, bias=config.bias)
         self.dropout = nn.Dropout(config.dropout)
+        self.GLU = GLU(new_gelu)
 
     def forward(self, x):
         x = self.c_fc(x)
-        x = new_gelu(x)
+        x = self.GLU(x)
         x = self.c_proj(x)
         x = self.dropout(x)
         return x
@@ -120,7 +210,7 @@ class GPTConfig:
     n_head: int = 12
     n_embd: int = 768
     dropout: float = 0.0
-    bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    bias: bool = False # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
 
 class GPT(nn.Module):
 
@@ -132,12 +222,15 @@ class GPT(nn.Module):
 
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
-            wpe = nn.Embedding(config.block_size, config.n_embd),
+            #wpe = nn.Embedding(config.block_size, config.n_embd),
+            
+            wpe = ScaledSinosoidal(config.n_embd, config.block_size),
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = LayerNorm(config.n_embd, bias=config.bias),
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.lm_LayerNorm = LayerNorm(config.vocab_size, bias=config.bias)
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
         # This behavior is deprecated and will be an error in future versions"
@@ -183,18 +276,18 @@ class GPT(nn.Module):
         # forward the GPT model itself
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
-        x = self.transformer.drop(tok_emb + pos_emb)
+        x = self.transformer.ln_f(self.transformer.drop(tok_emb + pos_emb)) # add token embedding and positional embedding. Then apply layernorm
         for block in self.transformer.h:
             x = block(x)
         x = self.transformer.ln_f(x)
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
-            logits = self.lm_head(x)
+            logits = self.lm_LayerNorm(self.lm_head(x))
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            logits = self.lm_LayerNorm(self.lm_head(x[:, [-1], :])) # note: using list [-1] to preserve the time dim
             loss = None
 
         return logits, loss
