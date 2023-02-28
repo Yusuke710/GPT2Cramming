@@ -212,6 +212,7 @@ class GPTConfig:
     n_embd: int = 768
     dropout: float = 0.0
     bias: bool = False # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    using_sinusoid: bool = True # GPT has to know if it's using sinusoidal embedding or not
 
 class GPT(nn.Module):
 
@@ -219,16 +220,18 @@ class GPT(nn.Module):
         super().__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None
-        self.config = config
+        self.config :GPTConfig = config
 
-        self.transformer = nn.ModuleDict(dict(
+        transformer_dict = dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
-            #wpe = nn.Embedding(config.block_size, config.n_embd),
-            wpe = ScaledSinosoidal(config.n_embd, config.block_size),
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = LayerNorm(config.n_embd, bias=config.bias),
-        ))
+        )
+        # check using_sinusoid to decide on embedding type
+        transformer_dict['wpe'] = ScaledSinosoidal(config.n_embd, config.block_size) if self.config.using_sinusoid else nn.Embedding(config.vocab_size, config.n_embd)
+        
+        self.transformer = nn.ModuleDict(transformer_dict)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.lm_LayerNorm = LayerNorm(config.vocab_size, bias=config.bias)
         # with weight tying when using torch.compile() some warnings get generated:
@@ -255,8 +258,9 @@ class GPT(nn.Module):
         params are actually used as weights in the final layer, so we include them.
         """
         n_params = sum(p.numel() for p in self.parameters())
-        if non_embedding:
-            n_params -= self.transformer.wpe.weight.numel()
+        # sinusoid only has the scale as a trainable parameter which is not accessed through .weight
+        if non_embedding: 
+            n_params -= self.transformer.wpe.scale_factor.numel() if self.config.using_sinusoid else self.transformer.wpe.weight.numel()
         return n_params
 
     def _init_weights(self, module):
@@ -298,7 +302,9 @@ class GPT(nn.Module):
         # but want to use a smaller block size for some smaller, simpler model
         assert block_size <= self.config.block_size
         self.config.block_size = block_size
-        self.transformer.wpe.weight = nn.Parameter(self.transformer.wpe.weight[:block_size])
+        # sinusoidal embedding only has the scale_factor as a trainable parameter therefore block size is not relevant in that case
+        if not self.config.using_sinusoid: 
+            self.transformer.wpe.weight = nn.Parameter(self.transformer.wpe.weight[:block_size])
         for block in self.transformer.h:
             block.attn.bias = block.attn.bias[:,:,:block_size,:block_size]
 
@@ -386,6 +392,9 @@ class GPT(nn.Module):
                     decay.add(fpn)
                 elif pn.endswith('weight') and isinstance(m, blacklist_weight_modules):
                     # weights of blacklist modules will NOT be weight decayed
+                    no_decay.add(fpn)
+                # we have to add the sinusoidal embedding scale factor into the no decay set
+                elif pn.endswith('scale_factor'):
                     no_decay.add(fpn)
 
         # subtle: 'transformer.wte.weight' and 'lm_head.weight' are tied, so they
