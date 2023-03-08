@@ -3,3 +3,4 @@ __pycache__/
 data/shakespeare/train.bin
 data/shakespeare/val.bin
 data/shakespeare/input.txt
+venv

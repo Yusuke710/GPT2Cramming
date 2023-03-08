@@ -45,8 +45,10 @@ wandb_project = 'owt'
 wandb_run_name = 'gpt2' # 'run' + str(time.time())
 # data
 dataset = 'shakespeare' #'openwebtext'
-gradient_accumulation_steps = 1 # used to simulate larger batch sizes
+optimal_batch_size = 1536 # from CRAMMING paper training BERT(120M)
 batch_size = 4 # if gradient_accumulation_steps > 1, this is the micro-batch size
+gradient_accumulation_steps = optimal_batch_size // batch_size # used to simulate larger batch sizes
+
 block_size = 1024
 # model
 n_layer = 12
@@ -56,17 +58,18 @@ dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = False # do we use bias inside LayerNorm and Linear layers?
 using_sinusoid = True # We have to add this option in global variables to be able to set it using the command line
 # adamw optimizer
-learning_rate = 6e-4 # max learning rate
-max_iters = 600_000 # total number of training iterations
-weight_decay = 1e-1
+learning_rate = 1e-3 # max learning rate
+max_iters = 5 # total number of training iterations
+weight_decay = 1e-2
 beta1 = 0.9
-beta2 = 0.95
-grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
+beta2 = 0.98
+epsilon = 10e-12
+grad_clip = 0.5 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
-lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
-min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
+lr_decay_iters = 5 # should be ~= max_iters per Chinchilla
+min_lr = 1e-4 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
 # system
@@ -186,7 +189,7 @@ model.to(device)
 scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
 
 # optimizer
-optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
+optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), epsilon, device_type)
 if init_from == 'resume':
     optimizer.load_state_dict(checkpoint['optimizer'])
 
