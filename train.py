@@ -59,7 +59,7 @@ bias = False # do we use bias inside LayerNorm and Linear layers?
 using_sinusoid = True # We have to add this option in global variables to be able to set it using the command line
 # adamw optimizer
 learning_rate = 1e-3 # max learning rate
-max_iters = 5 # total number of training iterations
+max_iters = 600_000 # total number of training iterations
 weight_decay = 1e-2
 beta1 = 0.9
 beta2 = 0.98
@@ -68,7 +68,7 @@ grad_clip = 0.5 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
-lr_decay_iters = 5 # should be ~= max_iters per Chinchilla
+lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
 min_lr = 1e-4 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
