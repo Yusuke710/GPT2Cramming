@@ -229,7 +229,7 @@ class GPT(nn.Module):
             ln_f = LayerNorm(config.n_embd, bias=config.bias),
         )
         # check using_sinusoid to decide on embedding type
-        transformer_dict['wpe'] = ScaledSinosoidal(config.n_embd, config.block_size) if self.config.using_sinusoid else nn.Embedding(config.vocab_size, config.n_embd)
+        transformer_dict['wpe'] = ScaledSinosoidal(config.n_embd, config.block_size) if self.config.using_sinusoid else nn.Embedding(config.block_size, config.n_embd)
         
         self.transformer = nn.ModuleDict(transformer_dict)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
@@ -426,7 +426,7 @@ class GPT(nn.Module):
 
         return optimizer
 
-    def estimate_mfu(self, fwdbwd_per_iter, dt):
+    def estimate_mfu(self, fwdbwd_per_iter, dt, gpu_estimated_FLOP):
         """ estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS """
         # first estimate the number of flops we do per iteration.
         # see PaLM paper Appendix B as ref: https://arxiv.org/abs/2204.02311
@@ -438,7 +438,7 @@ class GPT(nn.Module):
         flops_per_iter = flops_per_fwdbwd * fwdbwd_per_iter
         # express our flops throughput as ratio of A100 bfloat16 peak flops
         flops_achieved = flops_per_iter * (1.0/dt) # per second
-        flops_promised = 312e12 # A100 GPU bfloat16 peak flops is 312 TFLOPS
+        flops_promised = gpu_estimated_FLOP # A100 GPU bfloat16 peak flops is 312 TFLOPS
         mfu = flops_achieved / flops_promised
         return mfu
 
