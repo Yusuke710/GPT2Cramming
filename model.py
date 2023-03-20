@@ -15,6 +15,96 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+
+# FeedForward
+# GLU to replace new_gelu
+class GLU(torch.nn.Module):
+    """*-GLU activation functions.
+    Implementation mostly following megatron
+    """
+
+    def __init__(self, sub_activation):
+        super().__init__()
+        self.sub_activation = sub_activation()
+
+    def forward(self, inputs):
+        x, gate = inputs.chunk(2, dim=-1)
+        return self.sub_activation(gate) * x
+        #return new_gelu(gate) * x
+'''
+# feedforward when GLU is used, this class is not used in GPT-2
+class FFNComponent(torch.nn.Module):
+    """Note: The FF layer is not auto-scaled when using a GLU type activation.
+    Better do this manually and choose a sensible intermed_size that is nicely divisible.
+    The neox suggestion for approx. equal parameter count is int(4 * 2 / 3 * hidden_size) * 2 [this is ~5.33]
+    """
+
+    def __init__(self, hidden_size, intermed_size, nonlin_fn=torch.nn.GELU, use_bias=True):
+        super().__init__()
+        self.dense_in = torch.nn.Linear(hidden_size, intermed_size, bias=use_bias)
+        self.nonlin = nonlin_fn()
+        if isinstance(self.nonlin, GLU) or getattr(self.nonlin, "original_name", "") == "GLU":
+            intermed_output_size = intermed_size // 2
+        else:
+            intermed_output_size = intermed_size
+        self.dense_out = torch.nn.Linear(intermed_output_size, hidden_size, bias=use_bias)
+
+    def forward(self, hidden_states):
+        return self.dense_out(self.nonlin(self.dense_in(hidden_states)))
+'''
+
+# module partially stolen from pytorch examples:
+class SinusoidalPositional(torch.nn.Module):
+    r"""Inject some information about the relative or absolute position of the tokens
+    in the sequence. The positional encodings have the same dimension as
+    the embeddings, so that the two can be summed. Here, we use sine and cosine
+    functions of different frequencies.
+    """
+
+    def __init__(self, embedding_dim, max_seq_length=5000):
+        super().__init__()
+
+        pe = torch.zeros(max_seq_length, embedding_dim)
+        position = torch.arange(0, max_seq_length, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, embedding_dim, 2).float() * (-math.log(10000.0) / embedding_dim))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        pe = pe.unsqueeze(0)
+        self.register_buffer("pe", pe, persistent=False)
+
+    def forward(self, input_ids):
+        r"""Inputs of forward function
+        Args:
+            x: the sequence fed to the positional encoder model (required).
+        Shape:
+            x: [batch size, sequence length, embed dim]
+            output: [batch size, sequence length, embed dim]
+        Examples:
+            >>> output = pos_encoder(x)
+        """
+        return self.pe[:, : input_ids.shape[1], :]
+
+# Embedding
+class ScaledSinosoidal(SinusoidalPositional):
+    """Sinusoidal with scaling (see FLASH paper)."""
+
+    def __init__(self, embedding_dim, max_seq_length):
+        super().__init__(embedding_dim, max_seq_length)
+        self.scale_factor = torch.nn.Parameter(torch.tensor([1.0 / embedding_dim**0.5]))
+
+    def forward(self, input_ids):
+        r"""Inputs of forward function
+        Args:
+            x: the sequence fed to the positional encoder model (required).
+        Shape:
+            x: [batch size, sequence length, embed dim]
+            output: [batch size, sequence length, embed dim]
+        Examples:
+            >>> output = pos_encoder(x)
+        """
+        return self.scale_factor * self.pe[:, : input_ids.shape[1], :]
+
 # @torch.jit.script # good to enable when not using torch.compile, disable when using (our default)
 def new_gelu(x):
     """
@@ -88,12 +178,13 @@ class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
-        self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
+        self.c_proj  = nn.Linear(2 * config.n_embd, config.n_embd, bias=config.bias)
         self.dropout = nn.Dropout(config.dropout)
+        self.GLU = GLU(torch.nn.GELU)
 
     def forward(self, x):
         x = self.c_fc(x)
-        x = new_gelu(x)
+        x = self.GLU(x)
         x = self.c_proj(x)
         x = self.dropout(x)
         return x
@@ -120,7 +211,8 @@ class GPTConfig:
     n_head: int = 12
     n_embd: int = 768
     dropout: float = 0.0
-    bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    bias: bool = False # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    using_sinusoid: bool = True # GPT has to know if it's using sinusoidal embedding or not
 
 class GPT(nn.Module):
 
@@ -128,16 +220,20 @@ class GPT(nn.Module):
         super().__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None
-        self.config = config
+        self.config :GPTConfig = config
 
-        self.transformer = nn.ModuleDict(dict(
+        transformer_dict = dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
-            wpe = nn.Embedding(config.block_size, config.n_embd),
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = LayerNorm(config.n_embd, bias=config.bias),
-        ))
+        )
+        # check using_sinusoid to decide on embedding type
+        transformer_dict['wpe'] = ScaledSinosoidal(config.n_embd, config.block_size) if self.config.using_sinusoid else nn.Embedding(config.block_size, config.n_embd)
+        
+        self.transformer = nn.ModuleDict(transformer_dict)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.lm_LayerNorm = LayerNorm(config.vocab_size, bias=config.bias)
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
         # This behavior is deprecated and will be an error in future versions"
@@ -162,8 +258,9 @@ class GPT(nn.Module):
         params are actually used as weights in the final layer, so we include them.
         """
         n_params = sum(p.numel() for p in self.parameters())
-        if non_embedding:
-            n_params -= self.transformer.wpe.weight.numel()
+        # sinusoid only has the scale as a trainable parameter which is not accessed through .weight
+        if non_embedding: 
+            n_params -= self.transformer.wpe.scale_factor.numel() if self.config.using_sinusoid else self.transformer.wpe.weight.numel()
         return n_params
 
     def _init_weights(self, module):
@@ -183,18 +280,18 @@ class GPT(nn.Module):
         # forward the GPT model itself
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
-        x = self.transformer.drop(tok_emb + pos_emb)
+        x = self.transformer.ln_f(self.transformer.drop(tok_emb + pos_emb)) # add token embedding and positional embedding. Then apply layernorm
         for block in self.transformer.h:
             x = block(x)
         x = self.transformer.ln_f(x)
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
-            logits = self.lm_head(x)
+            logits = self.lm_LayerNorm(self.lm_head(x))
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            logits = self.lm_LayerNorm(self.lm_head(x[:, [-1], :])) # note: using list [-1] to preserve the time dim
             loss = None
 
         return logits, loss
@@ -205,7 +302,9 @@ class GPT(nn.Module):
         # but want to use a smaller block size for some smaller, simpler model
         assert block_size <= self.config.block_size
         self.config.block_size = block_size
-        self.transformer.wpe.weight = nn.Parameter(self.transformer.wpe.weight[:block_size])
+        # sinusoidal embedding only has the scale_factor as a trainable parameter therefore block size is not relevant in that case
+        if not self.config.using_sinusoid: 
+            self.transformer.wpe.weight = nn.Parameter(self.transformer.wpe.weight[:block_size])
         for block in self.transformer.h:
             block.attn.bias = block.attn.bias[:,:,:block_size,:block_size]
 
@@ -266,7 +365,7 @@ class GPT(nn.Module):
 
         return model
 
-    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
+    def configure_optimizers(self, weight_decay, learning_rate, betas, epsilon, device_type):
         """
         This long function is unfortunately doing something very simple and is being very defensive:
         We are separating out all parameters of the model into two buckets: those that will experience
@@ -294,6 +393,9 @@ class GPT(nn.Module):
                 elif pn.endswith('weight') and isinstance(m, blacklist_weight_modules):
                     # weights of blacklist modules will NOT be weight decayed
                     no_decay.add(fpn)
+                # we have to add the sinusoidal embedding scale factor into the no decay set
+                elif pn.endswith('scale_factor'):
+                    no_decay.add(fpn)
 
         # subtle: 'transformer.wte.weight' and 'lm_head.weight' are tied, so they
         # will appear in the no_decay and decay sets respectively after the above.
@@ -320,11 +422,11 @@ class GPT(nn.Module):
         use_fused = (device_type == 'cuda') and ('fused' in inspect.signature(torch.optim.AdamW).parameters)
         print(f"using fused AdamW: {use_fused}")
         extra_args = dict(fused=True) if use_fused else dict()
-        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
+        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, eps = epsilon, **extra_args)
 
         return optimizer
 
-    def estimate_mfu(self, fwdbwd_per_iter, dt):
+    def estimate_mfu(self, fwdbwd_per_iter, dt, gpu_estimated_FLOP):
         """ estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS """
         # first estimate the number of flops we do per iteration.
         # see PaLM paper Appendix B as ref: https://arxiv.org/abs/2204.02311
@@ -336,7 +438,7 @@ class GPT(nn.Module):
         flops_per_iter = flops_per_fwdbwd * fwdbwd_per_iter
         # express our flops throughput as ratio of A100 bfloat16 peak flops
         flops_achieved = flops_per_iter * (1.0/dt) # per second
-        flops_promised = 312e12 # A100 GPU bfloat16 peak flops is 312 TFLOPS
+        flops_promised = gpu_estimated_FLOP # A100 GPU bfloat16 peak flops is 312 TFLOPS
         mfu = flops_achieved / flops_promised
         return mfu
 
