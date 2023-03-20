@@ -158,6 +158,9 @@ And what, sir, sir
 ```
 Not a very good result. However, you can tell that crammed GPT-2 is showing you the glimpse of Shakespeare.
 
+## Discussion on cramming on GPT-2
+We did not find much improvement of our modified model over original nanoGPT(GPT-2) model. The original code has already been highly optimised and the added changes did not contribute too much on its training speed and performance.
+
 ## Future work
 - the effect of sparse attention on training speed and model performance
 - sparse token prodiction
