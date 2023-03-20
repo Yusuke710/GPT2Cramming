@@ -12,6 +12,7 @@ We used nanoGPT(https://github.com/karpathy/nanoGPT) written by Kaparthy as our 
 | RTX3060 | 12.74e12 | 66% | 3.55 |
 | RTX3060 ti | Row 2, Column 2 | Row 2, Column 3 | Row 2, Column 4 |
 | RTX3090 | 35.58e12 | 64% | 3.32 |
+
 #loss is taken by averaging last 200 iterations
 ## MODIFYING THE ARCHITECTURE
 All the changes are based on how BERT(120M) was modified in the CRAMMING paper. Since MLM and Generative models are not the same, some of the changes might not lead to performance improvement. We have not tested this through ablation study due to the constraint of compute budget.
