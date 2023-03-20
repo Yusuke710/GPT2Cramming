@@ -48,8 +48,6 @@ dataset = 'openwebtext'
 optimal_batch_size = 128 # from CRAMMING paper training BERT(120M)
 batch_size = 3 # if gradient_accumulation_steps > 1, this is the micro-batch size 
 gradient_accumulation_steps = optimal_batch_size // batch_size # used to simulate larger batch sizes
-print(gradient_accumulation_steps)
-
 block_size = 1024
 # model
 n_layer = 12
@@ -99,6 +97,7 @@ else:
     # if not ddp, we are running on a single gpu, and one process
     master_process = True
     seed_offset = 0
+    gradient_accumulation_steps *= 8 # simulate 8 gpus
 
 if master_process:
     os.makedirs(out_dir, exist_ok=True)
