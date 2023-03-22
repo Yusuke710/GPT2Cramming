@@ -7,7 +7,7 @@ We used nanoGPT(https://github.com/karpathy/nanoGPT) written by Kaparthy as our 
 
 ![Cramming on GPT-2](assets/loss.png)
 
-| GPU | flops | Model flops Utilization | loss |
+| GPU | flops | Model flops Utilization | loss | 
 | -------- | -------- | -------- | -------- |
 | RTX3060 | 12.74e12 | 66% | 3.55 |
 | RTX3060 ti | Row 2, Column 2 | Row 2, Column 3 | Row 2, Column 4 |
@@ -22,10 +22,10 @@ All the changes are based on how BERT(120M) was modified in the CRAMMING paper. 
 
 **Feedforward block**
 - We disabled all linear layer biases
-- We re-ordered the block into a gated linear unit(GLU), We do not increase the number of parameters in the FFN block to compensate for the halving of the hidden dimensionality due to gating.
+- We re-ordered the block into a gated linear unit(GLU), We do not increase the number of parameters in the FFN block to compensate for the halving of the hidden dimensionality due to gating. This leads to the reduction of the model parameters which may effect its performance(we did not have enough compute resource to test this).
 
 **Embedding**
-- scaled sinusoidal positional encoder
+- scaled sinusoidal positional encoder. This reduces the model parameters by block_size*n_embd (1024*768 ~= 0.8M). As outlined in the paper ["Attention is all you need"](https://arxiv.org/abs/1706.03762), we believe that the learned positional embeddings and sinusoidal positional encoder would produce the identical result, and hence minimising the performance downgrade from reduced number of model parameters.
 - We include a layer normalisation at the end of the encoding block.
 
 **Layer structure** 
@@ -67,7 +67,7 @@ As you can see from the diagram in CRAMMING, learning scheduling using warmup an
 
 
 **Batch Size**
-Depending on the hardware you use, the batch size varies. However, you can simulate this to the value you want by using gradient accumulation. In that way, you can restrict the training pipeline from doing back propagation unnecessarily. We set our optimal batch size to be the same as in the CRAMMING paper, 1536. 
+Depending on the hardware you use, the batch size varies. However, you can simulate this to the value you want by using gradient accumulation. In that way, you can restrict the training pipeline from doing back propagation unnecessarily. We set our optimal batch size to be 128. In addition to the efficient training, larger batch size also stabilizes training. 
 
 Optimal batch size = batch size x gradient accumulation
 
