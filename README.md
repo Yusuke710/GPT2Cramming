@@ -166,7 +166,7 @@ We did not find much improvement of our modified model over original nanoGPT(GPT
 
 ## Future work
 - the effect of sparse attention on training speed and model performance
-- sparse token prodiction
+- sparse token prediction
 - ablation study on model architecture and training pipeline
 
 ## installation, training, fine-tuning, sampling
