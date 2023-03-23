@@ -7,11 +7,14 @@ We used nanoGPT(https://github.com/karpathy/nanoGPT) written by Kaparthy as our 
 
 ![Cramming on GPT-2](assets/loss.png)
 
-| GPU | flops | Model flops Utilization | loss | 
-| -------- | -------- | -------- | -------- |
-| RTX3060 | 12.74e12 | 66% | 3.55 |
-| RTX3060 ti | Row 2, Column 2 | Row 2, Column 3 | Row 2, Column 4 |
-| RTX3090 | 35.58e12 | 64% | 3.32 |
+| GPU         | flops        | Model flops Utilization | loss original GPT-2 | loss crammed GPT-2 |
+| -----------|-------------|------------------------|----------------------|---------------------|
+| RTX3060    | 12.74e12    | 66%                    |                  | 3.55                |
+| RTX3060 ti | Row 2, Col 2| Row 2, Col 3           | Row 2, Col 4         | Row 2, Col 5        |
+| RTX3090    | 35.58e12    | 64%                    |                  | 3.32                |
+
+
+#Model flops Utilization is using the value obtained from modified implementation
 
 #loss is taken by averaging last 200 iterations
 ## MODIFYING THE ARCHITECTURE
