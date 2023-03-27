@@ -5,7 +5,7 @@ Inspired by the recent paper on training a LLM(BERT) on a single GPU in one day(
 The goal of this project is to verify the result of the CRAMMING paper and examine whether similar modification would have an effect on the GPT-2 model and improve its training speed.
 We used nanoGPT(https://github.com/karpathy/nanoGPT) written by Kaparthy as our baseline GPT-2 model and compared our modified model for performance improvement.
 
-![Cramming on GPT-2](log/RTX3060compare.png)
+![Cramming on GPT-2](log/RTX3060_compare.png)
 
 | GPU         | flops        | Model flops Utilization | loss original GPT-2 | loss crammed GPT-2 |
 | -----------|-------------|------------------------|----------------------|---------------------|
