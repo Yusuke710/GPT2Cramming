@@ -5,13 +5,13 @@ Inspired by the recent paper on training a LLM(BERT) on a single GPU in one day(
 The goal of this project is to verify the result of the CRAMMING paper and examine whether similar modification would have an effect on the GPT-2 model and improve its training speed.
 We used nanoGPT(https://github.com/karpathy/nanoGPT) written by Kaparthy as our baseline GPT-2 model and compared our modified model for performance improvement.
 
-![Cramming on GPT-2](assets/loss.png)
+![Cramming on GPT-2](log/RTX3060compare.png)
 
 | GPU         | flops        | Model flops Utilization | loss original GPT-2 | loss crammed GPT-2 |
 | -----------|-------------|------------------------|----------------------|---------------------|
-| RTX3060    | 12.74e12    | 66%                    |                  | 3.55                |
-| RTX3060 ti | Row 2, Col 2| Row 2, Col 3           | Row 2, Col 4         | Row 2, Col 5        |
-| RTX3090    | 35.58e12    | 64%                    |                  | 3.32                |
+| RTX3060    | 12.74e12    | 66%                    | 3.535                | 3.549                |
+| RTX3060 ti | 16.20e12    | 76%                    | 3.451                | 4.930(due to low num of iterations caused by grad accumulation being too large)                |
+| RTX3090    | 35.58e12    | 64%                    | 3.321                | 3.315                |
 
 
 #Model flops Utilization is using the value obtained from modified implementation
@@ -162,7 +162,7 @@ And what, sir, sir
 Not a very good result. However, you can tell that crammed GPT-2 is showing you the glimpse of Shakespeare.
 
 ## Discussion on cramming on GPT-2
-We did not find much improvement of our modified model over original nanoGPT(GPT-2) model. The original code has already been highly optimised and the added changes did not contribute too much on its training speed and performance.
+We did not find much improvement of our crammed model over original nanoGPT(GPT-2) model as the original code has already been highly optimised, especially by remoing bias in MLP and self attention. The added changes did not contribute too much on its training speed and performance. Crammed model on 3060ti has a significantly worse result as it was not able to run through as many iterations as original nanoGPT due to gradient accumulation being too large.
 
 ## Future work
 - the effect of sparse attention on training speed and model performance
