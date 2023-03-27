@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 
 # Open the text file for reading
-with open('log_batchsize1536_RTX3090.txt', 'r') as file:
+with open('log_RTX3060ti_kaparthy_bs2.txt', 'r') as file:
     # Initialize empty lists to store data
     iterations = []
     losses = []
@@ -33,11 +33,15 @@ print(f"Average loss in last 200 iterations: {avg_loss}")
 # Find the index of the lowest loss
 min_loss_idx = losses.index(min(losses))
 # Add a red dot for the lowest loss
-plt.plot(min_loss_idx, losses[min_loss_idx], 'ro')
+fig, ax = plt.subplots()
+ax.plot(min_loss_idx, losses[min_loss_idx], 'ro', label=f"min = ({min_loss_idx}, {losses[min_loss_idx]})")
 
 # Create a line plot with iteration number on the x-axis and loss value on the y-axis
-plt.plot(iterations, losses)
-plt.xlabel('Iteration Number')
-plt.ylabel('Loss')
-plt.title('RTX3600')
-plt.show()
+ax.plot(iterations, losses)
+ax.set_yscale('log')
+ax.grid(True)
+ax.set_xlabel('Iteration Number')
+ax.set_ylabel('Loss')
+fig.suptitle('RTX3060ti-Kaparthy')
+ax.legend()
+fig.savefig("log_RTX3060ti_kaparthy_bs2.png", bbox_inches="tight")
