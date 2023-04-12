@@ -7,6 +7,10 @@ We used nanoGPT(https://github.com/karpathy/nanoGPT) written by Kaparthy as our 
 
 ![Cramming on GPT-2](log/RTX3060_compare.png)
 
+![loss rolling mean](log/rolling_mean.png)
+![loss rolling std](log/rolling_std.png)
+
+
 | GPU         | flops        | Model flops Utilization | loss original GPT-2 | loss crammed GPT-2 |
 | -----------|-------------|------------------------|----------------------|---------------------|
 | RTX3060    | 12.74e12    | 66%                    | 3.535                | 3.549                |
@@ -79,7 +83,7 @@ While dropout can be helpful as a regularizer, dropout effectively reduces the n
 
 
 ## OPTIMISING THE DATASET
-CRAMMING mentioned that training on more frequent tokens results in faster training. However, we did not apply this in our experiment as the dataset is sufficiently optimised through Byte Pair Encoding(BPE). BPE enables the encoding of any rare words in the vocabulary with appropriate subword tokens without introducing any “unknown” tokens. BPE also flattens the frequent tokens and rare tokens.
+CRAMMING mentioned that training on more frequent tokens results in faster training. However, we did not apply this in our experiment as the dataset is sufficiently optimised through Byte Pair Encoding(BPE). BPE enables the encoding of any rare words in the vocabulary with appropriate subword tokens without introducing any “unknown” tokens. 
 
 ## Model parameters
 Due to the modification of model architecture, model parameters are reduced from 120M to 109.48M. This largely came from switching GELU to gated linear unit(GLU) and from positional embeddings to sinusoidal positional encoder
@@ -162,7 +166,7 @@ And what, sir, sir
 Not a very good result. However, you can tell that crammed GPT-2 is showing you the glimpse of Shakespeare.
 
 ## Discussion on cramming on GPT-2
-We did not find much improvement of our crammed model over original nanoGPT(GPT-2) model as the original code has already been highly optimised, especially by remoing bias in MLP and self attention. The added changes did not contribute too much on its training speed and performance. Crammed model on 3060ti has a significantly worse result as it was not able to run through as many iterations as original nanoGPT due to gradient accumulation being too large.
+We did not find much improvement of our crammed model over original nanoGPT(GPT-2) model as the original code has already been highly optimised, especially by remoing bias in MLP and self attention. The added changes did not contribute significantly on its training speed and performance though it made the training slightly more stable. Crammed model on 3060ti has a significantly worse result as it was not able to run through as many iterations as original nanoGPT due to gradient accumulation being too large.
 
 ## Future work
 - the effect of sparse attention on training speed and model performance
