@@ -7,8 +7,7 @@ We used nanoGPT(https://github.com/karpathy/nanoGPT) written by Kaparthy as our 
 
 ![Cramming on GPT-2](log/RTX3060_compare.png)
 
-![loss rolling mean](log/rolling_mean.png)
-![loss rolling std](log/rolling_std.png)
+![loss rolling mean](log/rolling_mean.png)![loss rolling std](log/rolling_std.png)
 
 
 | GPU         | flops        | Model flops Utilization | loss original GPT-2 | loss crammed GPT-2 |
