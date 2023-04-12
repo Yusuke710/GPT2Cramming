@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 
 filename_original = 'log_RTX3060_kaparthy_bs_3'
 filename_modified = 'log_RTX3060_optimalbatchsize128' 
@@ -65,7 +66,7 @@ def rolling_mean_std(values, window_size):
     # Calculate the rolling standard deviation using the specified window size
     rolling_std = series.rolling(window=window_size).std()
     # Return the rolling mean and standard deviation as a tuple of lists
-    return (rolling_mean.tolist(), rolling_std.tolist())
+    return (rolling_mean, rolling_std)
 
 
 rolling_mean_original, rolling_std_original = rolling_mean_std(losses_original, window_size)
@@ -81,19 +82,31 @@ rolling_mean_modified, rolling_std_modified = rolling_mean_std(losses_modified, 
 # Find the index of the lowest loss
 # min_loss_idx = losses.index(min(losses))
 # Add a red dot for the lowest loss
-fig, ax = plt.subplots()
+fig, axs = plt.subplots()
 #ax.plot(min_loss_idx, losses[min_loss_idx], 'ro', label=f"min = ({min_loss_idx}, {losses[min_loss_idx]})")
 
 # Create a line plot with iteration number on the x-axis and loss value on the y-axis
 #ax.plot(rolling_mean_original, label='Kaparthy')
 #ax.plot(rolling_mean_modified, label='Crammed')
-ax.plot(rolling_std_original, label='Kaparthy')
-ax.plot(rolling_std_modified, label='Crammed')
+# ax.plot(rolling_std_original, label='Kaparthy')
+# ax.plot(rolling_std_modified, label='Crammed')
 
-ax.set_yscale('log')
-ax.grid(True)
-ax.set_xlabel('Iteration Number ')
-ax.set_ylabel('Loss rolling std')
+losses_original = np.array(losses_original)
+losses_modified = np.array(losses_modified)
+
+x_original = [i for i in range(len(losses_original))]
+axs.plot(x_original, rolling_mean_original, label=f'Kaparthy ({window_size}) rolling mean', color='#1f77b4', zorder=3)
+axs.fill_between(x_original, rolling_mean_original + rolling_std_original, rolling_mean_original - rolling_std_original, alpha=0.25, label=f'({window_size}) rolling 1 stdev band', color='#1f77b4', zorder=2)
+
+x_modified= [i for i in range(len(losses_modified))]
+axs.plot(x_modified, rolling_mean_modified, label=f'Cramming ({window_size}) rolling mean', color='#ff7f0e', zorder=3)
+axs.fill_between(x_modified, rolling_mean_modified + rolling_std_modified, rolling_mean_modified - rolling_std_modified, alpha=0.25, label=f'({window_size}) rolling 1 stdev band', color='#ff7f0e', zorder=2)
+
+
+axs.set_yscale('log')
+axs.grid(True)
+axs.set_xlabel('Iteration Number ')
+axs.set_ylabel('Loss')
 fig.suptitle(title)
-ax.legend()
-fig.savefig('rolling_std.png', bbox_inches='tight')
+axs.legend()
+fig.savefig('test.png', bbox_inches='tight')
