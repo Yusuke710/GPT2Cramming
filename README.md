@@ -5,9 +5,7 @@ Inspired by the recent paper on training a LLM(BERT) on a single GPU in one day(
 The goal of this project is to verify the result of the CRAMMING paper and examine whether similar modification would have an effect on the GPT-2 model and improve its training speed.
 We used nanoGPT(https://github.com/karpathy/nanoGPT) written by Kaparthy as our baseline GPT-2 model and compared our modified model for performance improvement.
 
-![Cramming on GPT-2](log/RTX3060_compare.png)
-
-![loss rolling mean](log/rolling_mean.png)![loss rolling std](log/rolling_std.png)
+![Cramming on GPT-2](log/test.png)
 
 
 | GPU         | flops        | Model flops Utilization | loss original GPT-2 | loss crammed GPT-2 |
@@ -165,7 +163,7 @@ And what, sir, sir
 Not a very good result. However, you can tell that crammed GPT-2 is showing you the glimpse of Shakespeare.
 
 ## Discussion on cramming on GPT-2
-We did not find much improvement of our crammed model over original nanoGPT(GPT-2) model as the original code has already been highly optimised, especially by remoing bias in MLP and self attention. The added changes did not contribute significantly on its training speed and performance though it made the training slightly more stable. Crammed model on 3060ti has a significantly worse result as it was not able to run through as many iterations as original nanoGPT due to gradient accumulation being too large.
+We did not find much improvement of our crammed model over original nanoGPT(GPT-2) model as the original code has already been highly optimised, especially by remoing bias in MLP and self attention. The added changes did not contribute significantly on its training speed and stability. Even though the baseline GPT-2 written by Kaparthy reaches lower loss faster than the crammed GPT-2, they both reached almost the same loss after 1 day of training. Crammed model on 3060ti has a significantly worse result as it was not able to run through as many iterations as original nanoGPT due to gradient accumulation being too large.
 
 ## Future work
 - the effect of sparse attention on training speed and model performance
